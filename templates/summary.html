@@ -55,7 +55,34 @@
     <main>
         <section>
             <h2 class="topPageHeadings">Summary</h2>
-            <a href="/download_summary" class="download-btn">Download PDF</a>
+
+            <!-- determine what time period you want the download period to cover -->
+            <form action="/download_summary" method="get" class="summary-section period-form">
+                <h3>Download a PDF Health Summary</h3>
+                <p class="period-note">All of your conditions are always included. The period only filters the flare up log.</p>
+
+                <div class="period-controls">
+                    <label for="period">Period of Displayed Data on PDF:</label>
+                    <select name="period" id="period">
+                        <option value="7d">Last 7 days</option>
+                        <option value="30d">Last 30 days</option>
+                        <option value="3m">Last 3 months</option>
+                        <option value="6m">Last 6 months</option>
+                        <option value="1y">Last 12 months</option>
+                        <option value="all" selected>All time</option>
+                        <option value="custom">Custom range…</option>
+                    </select>
+                </div>
+
+                <div id="custom-range" class="period-controls" hidden>
+                    <label for="start">From</label>
+                    <input type="date" name="start" id="start">
+                    <label for="end">To</label>
+                    <input type="date" name="end" id="end">
+                </div>
+
+                <button type="submit" class="download-btn">Download PDF</button>
+            </form>
         </section>
 
         <div class="summary-container">
@@ -131,6 +158,27 @@
 
     <script src="script.js"></script>
     <script>
+        // Show the date pickers only when "Custom range" is chosen
+        (function() {
+            var periodSelect = document.getElementById('period');
+            var customRange = document.getElementById('custom-range');
+            var startInput = document.getElementById('start');
+            var endInput = document.getElementById('end');
+            var today = new Date().toISOString().slice(0, 10);
+            startInput.max = today;
+            endInput.max = today;
+
+            function updateCustom() {
+                var isCustom = periodSelect.value === 'custom';
+                customRange.hidden = !isCustom;
+                startInput.required = isCustom;
+                endInput.required = isCustom;
+            }
+            periodSelect.addEventListener('change', updateCustom);
+            startInput.addEventListener('change', function() { endInput.min = startInput.value; });
+            updateCustom();
+        })();
+
         setTimeout(function() {
             document.querySelectorAll('.flash-message').forEach(function(el) {
                 el.style.transition = 'opacity 0.5s ease';

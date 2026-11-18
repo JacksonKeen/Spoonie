@@ -5,7 +5,7 @@ import re
 import os
 import secrets
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -46,45 +46,102 @@ USER_DB = 'users.db'
 
 # Predefined list of chronic conditions
 CHRONIC_CONDITIONS = [
+    "Addison's Disease",
+    "ALS (Amyotrophic Lateral Sclerosis)",
+    "Alzheimer's Disease",
+    "Anemia (Chronic)",
+    "Ankylosing Spondylitis",
     "Arthritis",
     "Asthma",
+    "Atrial Fibrillation",
+    "Bipolar Disorder",
+    "Bronchiectasis",
     "Celiac Disease",
+    "Cerebral Palsy",
     "Chronic Fatigue Syndrome",
     "Chronic Kidney Disease",
+    "Chronic Migraine",
     "Chronic Pain Syndrome",
+    "Chronic Pancreatitis",
+    "Chronic Sinusitis",
+    "Chronic Urticaria",
+    "Cirrhosis",
+    "Complex Regional Pain Syndrome",
+    "Congestive Heart Failure",
     "COPD",
+    "Coronary Artery Disease",
     "Crohn's Disease",
+    "Cushing's Syndrome",
     "Cystic Fibrosis",
+    "Dementia",
+    "Depression (Major Depressive Disorder)",
     "Diabetes Type 1",
     "Diabetes Type 2",
+    "Diverticulitis",
+    "Eczema",
     "Ehlers-Danlos Syndrome",
     "Endometriosis",
     "Epilepsy",
     "Fibromyalgia",
+    "Functional Neurological Disorder",
+    "Generalized Anxiety Disorder",
     "GERD",
+    "Glaucoma",
+    "Gout",
+    "Graves' Disease",
     "Hashimoto's Thyroiditis",
     "Heart Disease",
-    "Hepatitis",
+    "Hemophilia",
+    "Hepatitis B",
+    "Hepatitis C",
+    "Hidradenitis Suppurativa",
     "HIV/AIDS",
+    "Huntington's Disease",
     "Hypertension",
+    "Hyperthyroidism",
+    "Hypothyroidism",
     "Inflammatory Bowel Disease",
     "Interstitial Cystitis",
+    "Irritable Bowel Syndrome",
+    "Long COVID / Post-COVID Syndrome",
     "Lupus",
-    "Lyme Disease",
+    "Lyme Disease (Chronic)",
+    "Macular Degeneration",
+    "Marfan Syndrome",
+    "Ménière's Disease",
+    "Metabolic Syndrome",
     "Migraines",
     "Multiple Sclerosis",
+    "Muscular Dystrophy",
     "Myasthenia Gravis",
+    "Narcolepsy",
+    "Obsessive-Compulsive Disorder (OCD)",
+    "Osteoarthritis",
     "Osteoporosis",
     "Parkinson's Disease",
     "PCOS",
+    "Peripheral Artery Disease",
+    "Peripheral Neuropathy",
+    "Polycystic Kidney Disease",
+    "Polymyalgia Rheumatica",
+    "Post-Traumatic Stress Disorder (PTSD)",
     "Psoriasis",
+    "Psoriatic Arthritis",
+    "Pulmonary Fibrosis",
+    "Pulmonary Hypertension",
     "Raynaud's Disease",
+    "Restless Legs Syndrome",
     "Rheumatoid Arthritis",
+    "Schizophrenia",
     "Scleroderma",
     "Sickle Cell Disease",
     "Sjögren's Syndrome",
     "Sleep Apnea",
-    "Ulcerative Colitis"
+    "Thalassemia",
+    "Trigeminal Neuralgia",
+    "Ulcerative Colitis",
+    "Vasculitis",
+    "Vitiligo"
 ]
 
 
@@ -381,11 +438,39 @@ def summary():
     return render_template('summary.html', user_info=user_info, conditions=conditions, flare_ups=flare_ups)
 
 
+PERIOD_PRESETS = {'7d': 7, '30d': 30, '3m': 91, '6m': 182, '1y': 365}
+
+
+def resolve_period(args):
+    """Work out the (start, end, error) date range for the summary PDF.
+    start/end are None for 'all time'."""
+    today = date.today()
+    period = args.get('period', 'all')
+
+    if period in PERIOD_PRESETS:
+        return today - timedelta(days=PERIOD_PRESETS[period]), today, None
+    if period == 'custom':
+        try:
+            start = date.fromisoformat(args.get('start', ''))
+            end = date.fromisoformat(args.get('end', ''))
+        except ValueError:
+            return None, None, 'Please choose a valid start and end date.'
+        if start > end:
+            return None, None, 'The start date must be on or before the end date.'
+        return start, end, None
+    return None, None, None
+
+
 @app.route('/download_summary')
 def download_summary():
     if not session.get('user_id'):
         flash('Please sign in to download your summary.', 'error')
         return redirect('/signin')
+
+    start, end, period_error = resolve_period(request.args)
+    if period_error:
+        flash(period_error, 'error')
+        return redirect('/summary')
 
     conn = get_user_conn()
     cursor = conn.cursor()
@@ -404,11 +489,15 @@ def download_summary():
     )
     conditions = cursor.fetchall()
 
-    # Get user flare ups with linked conditions
-    cursor.execute(
-        'SELECT id, begin_time, end_time, flareup_comment FROM flare_ups WHERE user_id = ? ORDER BY begin_time DESC',
-        (session['user_id'],)
-    )
+    # Get user flare ups (within the chosen period) with linked conditions.
+    # A flare up is included if it overlaps the period at all.
+    flare_sql = 'SELECT id, begin_time, end_time, flareup_comment FROM flare_ups WHERE user_id = ?'
+    flare_params = [session['user_id']]
+    if start:
+        flare_sql += ' AND end_time >= ? AND begin_time < ?'
+        flare_params += [start.isoformat(), (end + timedelta(days=1)).isoformat()]
+    flare_sql += ' ORDER BY begin_time DESC'
+    cursor.execute(flare_sql, flare_params)
     flare_up_rows = cursor.fetchall()
 
     flare_up_ids = [row[0] for row in flare_up_rows]
@@ -426,6 +515,20 @@ def download_summary():
 
     flare_ups = [(row[1], row[2], row[3], ', '.join(conditions_map.get(row[0], []))) for row in flare_up_rows]
     conn.close()
+
+    period_names = {
+        '7d': 'Last 7 days', '30d': 'Last 30 days', '3m': 'Last 3 months',
+        '6m': 'Last 6 months', '1y': 'Last 12 months', 'custom': 'Custom range',
+    }
+    if start:
+        period_name = period_names.get(request.args.get('period'), 'Custom range')
+        if start == end:
+            period_dates = start.strftime('%d %B %Y')
+        else:
+            period_dates = f"{start.strftime('%d %B %Y')} to {end.strftime('%d %B %Y')}"
+    else:
+        period_name = 'All time'
+        period_dates = 'All recorded flare ups'
 
     # Create PDF in memory
     buffer = BytesIO()
@@ -481,6 +584,24 @@ def download_summary():
     elements.append(Paragraph(f"Health Summary — Generated {datetime.now().strftime('%d %B %Y')}", date_style))
     elements.append(Spacer(1, 16))
 
+    # Period Covered
+    elements.append(Paragraph("Period Covered", heading_style))
+    period_data = [
+        [Paragraph('<b>Period</b>', cell_style), Paragraph(period_name, cell_style)],
+        [Paragraph('<b>Dates</b>', cell_style), Paragraph(period_dates, cell_style)],
+        [Paragraph('<b>Applies to</b>', cell_style),
+         Paragraph('Flare Up Log (all conditions are always included)', cell_style)],
+    ]
+    period_table = Table(period_data, colWidths=[1.5*inch, usable_width - 1.5*inch])
+    period_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#2BB3A3')),
+    ]))
+    elements.append(period_table)
+    elements.append(Spacer(1, 16))
+
     # Personal Information
     elements.append(Paragraph("Personal Information", heading_style))
     user_data = [
@@ -522,7 +643,7 @@ def download_summary():
     elements.append(Spacer(1, 16))
 
     # Flare Up Log
-    elements.append(Paragraph("Flare Up Log", heading_style))
+    elements.append(Paragraph(f"Flare Up Log — {period_name}", heading_style))
     if flare_ups:
         col_w = [1.6*inch, 1.5*inch, 1.5*inch, 1.9*inch]
         flareup_data = [[
@@ -542,7 +663,8 @@ def download_summary():
         flareup_table.setStyle(make_table_style())
         elements.append(flareup_table)
     else:
-        elements.append(Paragraph("No flare ups logged yet.", cell_style))
+        msg = "No flare ups logged in this period." if start else "No flare ups logged yet."
+        elements.append(Paragraph(msg, cell_style))
 
     # Footer
     elements.append(Spacer(1, 30))
@@ -553,7 +675,11 @@ def download_summary():
     doc.build(elements)
     buffer.seek(0)
 
-    filename = f"health_summary_{user[0]}_{user[1]}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    if start:
+        period_part = f"{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}"
+    else:
+        period_part = f"all_{datetime.now().strftime('%Y%m%d')}"
+    filename = f"health_summary_{user[0]}_{user[1]}_{period_part}.pdf"
     return send_file(buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
 # _______________________ End Summary Page _______________________
 

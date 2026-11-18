@@ -693,6 +693,10 @@ main {
     margin-top: 2vh;
     box-shadow: 0 14px 35px rgba(26, 58, 53, 0.3);
 }
+
+.checkin-form-group {
+    border-top: 2px solid #1b766c;
+}
 /* end check-in page */
 
 
@@ -768,6 +772,56 @@ main {
 
 .download-btn:hover {
     background-color: #2BB3A3;
+}
+
+button.download-btn {
+    border: none;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* ===== SUMMARY PERIOD PICKER ===== */
+.summary-section.period-form {
+    background-color: rgb(107, 163, 182);
+    color: #fafafa;
+    margin-bottom: 2vh;
+}
+
+.summary-section.period-form h3 {
+    color: #fafafa;
+    border-bottom-color: #1b766c;
+}
+
+.period-note {
+    color: #fafafa;
+    font-size: 0.9em;
+    margin-bottom: 1vh;
+}
+
+.period-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: 1.5vh;
+}
+
+.period-controls[hidden] {
+    display: none;
+}
+
+.period-controls label {
+    color: #fafafa;
+    font-weight: bold;
+}
+
+.period-controls select,
+.period-controls input[type="date"] {
+    padding: 6px 10px;
+    border: 2px solid #1b766c;
+    border-radius: 8px;
+    background-color: #fafafa;
+    font: inherit;
 }
 
 section h2 {
